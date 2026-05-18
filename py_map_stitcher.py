@@ -15,6 +15,8 @@ import math
 import os
 import queue
 import random
+import sys
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -36,8 +38,10 @@ except Exception:  # pragma: no cover
 
 TILE_SIZE = 256
 USER_AGENT = "PyMapStitcher/1.0 (+local user tool)"
-MAX_INFLIGHT_PER_WORKER = 4  # verhindert Millionen Futures im RAM
+MAX_INFLIGHT_PER_WORKER = 4  # prevents millions of Futures in RAM
 HARD_TILE_WARNING = 5_000_000
+DEFAULT_CHUNK_SIZE = 64
+MAX_DIRECT_TIFF_BYTES = 1_000_000_000_000  # 1 TB safety limit for sparse BigTIFF output
 
 
 
@@ -49,22 +53,22 @@ MAP_PRESETS = {
     },
     "Google Satellite": {
         "url": "https://mt{rnd}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&hl=de",
-        "note": "Google Satellite. Nutzungsbedingungen beachten; kein Massendownload ohne Erlaubnis.",
+        "note": "Google Satellite. Respect the terms of use; no bulk downloading without permission.",
         "preview": True,
     },
     "Google Hybrid": {
         "url": "https://mt{rnd}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=de",
-        "note": "Google Satellite mit Beschriftung. Nutzungsbedingungen beachten.",
+        "note": "Google Satellite with labels. Respect the terms of use.",
         "preview": True,
     },
     "Bing Satellite": {
         "url": "https://ecn.t{snum}.tiles.virtualearth.net/tiles/a{q}.jpeg?g=14574&mkt=de-DE&n=z",
-        "note": "Bing aerial/satellite via QuadKey {q}. Respect the terms of use.",
+        "note": "Bing Aerial/Satellite via QuadKey {q}. Respect the terms of use.",
         "preview": True,
     },
     "Bing Hybrid": {
         "url": "https://ecn.t{snum}.tiles.virtualearth.net/tiles/h{q}.jpeg?g=14574&mkt=de-DE&n=z",
-        "note": "Bing hybrid via QuadKey {q}. Respect the terms of use.",
+        "note": "Bing Hybrid via QuadKey {q}. Respect the terms of use.",
         "preview": True,
     },
     "Esri World Imagery": {
@@ -87,7 +91,7 @@ MAP_PRESETS = {
         "note": "Light basemap. Respect the terms of use.",
         "preview": True,
     },
-    "NoniMapView Legacy: Google Satellitee": {
+    "NoniMapView Legacy: Google Satellite": {
         "url": "http://khm{rnd}.google.com/kh/v=47&x={x}&y={y}&z={z}&s=&hl=de",
         "note": "Legacy NoniMapView profile; may be outdated or blocked today.",
         "preview": True,
@@ -128,6 +132,10 @@ class StitchConfig:
     skip_existing_cache: bool = True
     timeout: int = 20
     headers: Optional[Dict[str, str]] = None
+    chunk_size: int = DEFAULT_CHUNK_SIZE
+    use_sqlite: bool = True
+    direct_bigtiff: bool = True
+    save_individual_tifs: bool = False
 
 
 def clamp_lat(lat: float) -> float:
@@ -194,6 +202,17 @@ def expand_url(template: str, x: int, y: int, z: int) -> str:
                     .replace("*LAN-LAN*", "de-DE"))
 
 
+
+
+def project_tiles_dir(output_file: Path) -> Path:
+    return output_file.parent / f"{output_file.stem}_tiles"
+
+def project_sqlite_dir(output_file: Path) -> Path:
+    return output_file.parent / f"{output_file.stem}_sqlite"
+
+def project_single_tiff_dir(output_file: Path) -> Path:
+    return output_file.parent / f"{output_file.stem}_single_tiff_tiles"
+
 def safe_cache_path(cache_dir: Path, z: int, x: int, y: int) -> Path:
     # Dateiname enthält jetzt ausdrücklich Zoom, X und Y.
     # Dadurch sieht man auch nach einem Abbruch sofort, welche Kachel vorhanden ist.
@@ -212,7 +231,7 @@ def safe_tile_tif_path(tile_tif_dir: Path, z: int, x: int, y: int) -> Path:
 
 def save_tile_as_tif(data: Optional[bytes], out_path: Path) -> None:
     # Schreibt genau eine erzeugte Kachel sofort als TIFF.
-    # Vorhandene TIFF-Kacheln werden nicht erneut geschrieben.
+    # Vorhandene TIFF-Tiles werden nicht erneut geschrieben.
     if out_path.exists() and out_path.stat().st_size > 100:
         return
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,149 +313,221 @@ def count_existing_tiles(cache_dir: Path, x_min: int, y_min: int, x_max: int, y_
     return existing
 
 
+
+def sqlite_path_for(cfg: StitchConfig) -> Path:
+    return cfg.cache_dir / f"download_state_z{cfg.z}.sqlite"
+
+
+def init_state_db(cfg: StitchConfig):
+    if not cfg.use_sqlite:
+        return None
+    cfg.cache_dir.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(str(sqlite_path_for(cfg)), timeout=30)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
+    db.execute("CREATE TABLE IF NOT EXISTS tiles (z INTEGER, x INTEGER, y INTEGER, status TEXT, updated REAL, error TEXT, PRIMARY KEY(z,x,y))")
+    db.execute("CREATE TABLE IF NOT EXISTS chunks (z INTEGER, x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER, status TEXT, updated REAL, PRIMARY KEY(z,x0,y0,x1,y1))")
+    db.commit()
+    return db
+
+
+def db_tile_done(db, z: int, x: int, y: int) -> bool:
+    if db is None:
+        return False
+    row = db.execute("SELECT status FROM tiles WHERE z=? AND x=? AND y=?", (z, x, y)).fetchone()
+    return bool(row and row[0] == "done")
+
+
+def db_mark_tile(db, z: int, x: int, y: int, status: str, error: Optional[str] = None):
+    if db is None:
+        return
+    db.execute("INSERT OR REPLACE INTO tiles(z,x,y,status,updated,error) VALUES(?,?,?,?,?,?)", (z, x, y, status, time.time(), error))
+
+
+def db_mark_chunk(db, z: int, x0: int, y0: int, x1: int, y1: int, status: str):
+    if db is None:
+        return
+    db.execute("INSERT OR REPLACE INTO chunks(z,x0,y0,x1,y1,status,updated) VALUES(?,?,?,?,?,?,?)", (z, x0, y0, x1, y1, status, time.time()))
+    db.commit()
+
+
+def iter_chunks(x_min: int, y_min: int, x_max: int, y_max: int, chunk_size: int):
+    """Spatial chunk scheduler. Yields chunk bounds only; never builds a global tile list."""
+    chunk_size = max(1, int(chunk_size))
+    for cy in range(y_min, y_max + 1, chunk_size):
+        for cx in range(x_min, x_max + 1, chunk_size):
+            yield cx, cy, min(cx + chunk_size - 1, x_max), min(cy + chunk_size - 1, y_max)
+
+
+def iter_chunk_jobs(cx0: int, cy0: int, cx1: int, cy1: int, z: int, x_min: int, y_min: int):
+    """Yields jobs for one chunk only."""
+    for y in range(cy0, cy1 + 1):
+        for x in range(cx0, cx1 + 1):
+            yield TileJob(x, y, z, x - x_min, y - y_min)
+
+
+def open_direct_bigtiff(cfg: StitchConfig, width: int, height: int, log_cb):
+    """Create a writable BigTIFF memmap. This writes directly to disk and does not allocate the full image in RAM.
+
+    Note: tifffile.memmap creates a BigTIFF-compatible on-disk array. It is block/chunk written by our scheduler,
+    but not LZW/DEFLATE-compressed while writing. This is intentional for random tile writes and resume safety.
+    """
+    if cfg.output_format.upper() != "TIFF" or not cfg.direct_bigtiff:
+        return None, None
+    estimated = width * height * 3
+    if estimated > MAX_DIRECT_TIFF_BYTES:
+        log_cb(f"Direct BigTIFF disabled: estimated output is {estimated/1_000_000_000_000:.2f} TB. Continuing as streaming tile/cache download with SQLite resume.")
+        return None, None
+    try:
+        import tifffile
+        cfg.output_file.parent.mkdir(parents=True, exist_ok=True)
+        bigtiff = estimated > 3_800_000_000
+        mem = tifffile.memmap(str(cfg.output_file), shape=(height, width, 3), dtype="uint8", bigtiff=bigtiff)
+        log_cb(f"Direct BigTIFF writer opened: {cfg.output_file}")
+        return mem, "memmap"
+    except Exception as exc:
+        log_cb(f"Direct BigTIFF writer unavailable ({exc}). Continuing with tile/cache output.")
+        return None, None
+
+
 def stitch_tiles(cfg: StitchConfig, progress_cb, log_cb, stop_event: threading.Event):
     if Image is None:
         raise RuntimeError("Pillow is required. Install with: pip install pillow requests")
+
     x_min, y_min, x_max, y_max = tile_bounds_for_bbox(cfg.min_lat, cfg.min_lon, cfg.max_lat, cfg.max_lon, cfg.z)
     cols = x_max - x_min + 1
     rows = y_max - y_min + 1
     total = cols * rows
     width = cols * TILE_SIZE
     height = rows * TILE_SIZE
+    chunk_size = max(1, int(cfg.chunk_size))
+
+    log_cb(f"Tile range: x={x_min}..{x_max}, y={y_min}..{y_max}")
     log_cb(f"Tiles: {cols} x {rows} = {total:,}")
     log_cb(f"Image size: {width:,} x {height:,} px")
-    if width * height > 300_000_000 and cfg.output_format.upper() in {"PNG", "JPEG"}:
-        log_cb("Warning: PNG/JPEG für sehr große Bilder kann langsam oder instabil sein; TIFF ist besser.")
+    log_cb(f"Streaming chunk scheduler active: chunk size {chunk_size} x {chunk_size} tiles")
+    log_cb("No global tile list is created in memory.")
+    log_cb(f"Raw tile folder: {cfg.cache_dir / str(cfg.z)}")
 
     if total > HARD_TILE_WARNING:
-        log_cb(f"Warning: very large area mit {total:,} Kacheln. Es wird trotzdem RAM-schonend als Stream gearbeitet, aber der Download kann extrem lange dauern.")
+        log_cb(f"Warning: very large selection with {total:,} tiles. This can run for days/weeks and may violate server terms if not authorized.")
 
-    # Resume-Prüfung ebenfalls gestreamt, ohne Job-Liste im RAM.
-    existing = count_existing_tiles(cfg.cache_dir, x_min, y_min, x_max, y_max, cfg.z)
-    if existing:
-        log_cb(f"Resume: {existing:,} existing tiles will be skipped/read from cache.")
+    db = init_state_db(cfg)
+    if db is not None:
+        log_cb(f"SQLite resume database: {sqlite_path_for(cfg)}")
 
     tile_tif_dir = cfg.tile_tif_dir or default_tile_tif_dir(cfg)
-    log_cb(f"Single TIFF tiles: {tile_tif_dir}")
+    if cfg.save_individual_tifs:
+        log_cb(f"Individual TIFF tiles enabled: {tile_tif_dir}")
+    else:
+        log_cb("Individual TIFF tiles disabled for streaming mode to avoid millions of filesystem files.")
 
-    # Download parallel, aber mit begrenzter Zahl gleichzeitig offener Futures.
-    # Wichtig: keine jobs=[] und keine futs=[] für Milliarden Kacheln.
-    done = 0
-    errors = 0
+    direct_mem, direct_kind = open_direct_bigtiff(cfg, width, height, log_cb)
+    if cfg.output_format.upper() in {"TILES", "KACHELN"}:
+        log_cb("Output mode: raw tiles + SQLite resume database. No merged image will be created.")
+
     max_workers = max(1, cfg.workers)
     max_inflight = max_workers * MAX_INFLIGHT_PER_WORKER
-    job_iter = iter(iter_tile_jobs(x_min, y_min, x_max, y_max, cfg.z))
-    with cf.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        pending = set()
-        while not stop_event.is_set():
-            while len(pending) < max_inflight:
-                try:
-                    job = next(job_iter)
-                except StopIteration:
-                    break
-                pending.add(pool.submit(download_one, job, cfg, stop_event))
-            if not pending:
-                break
-            done_set, pending = cf.wait(pending, return_when=cf.FIRST_COMPLETED)
-            for fut in done_set:
-                job, data, err = fut.result()
-                done += 1
-                if err:
-                    errors += 1
-                    if errors <= 20:
-                        log_cb(f"Error {job.z}/{job.x}/{job.y}: {err}")
-                else:
-                    try:
-                        save_tile_as_tif(data, safe_tile_tif_path(tile_tif_dir, job.z, job.x, job.y))
-                    except Exception as exc:
-                        errors += 1
-                        if errors <= 20:
-                            log_cb(f"Could not write TIFF tile {job.z}/{job.x}/{job.y}: {exc}")
-                if done % 10 == 0 or done == total:
-                    progress_cb(done, total, "Download")
-    if stop_event.is_set():
-        log_cb("Abgebrochen. Readys vorhandene Kacheln bleiben im Cache und werden beim nächsten Start übersprungen.")
-        return
+    done = 0
+    skipped = 0
+    errors = 0
 
-    if cfg.output_format.upper() in {"KACHELN", "TILES"}:
-        log_cb(f"Tile mode complete. Raw tiles: {safe_cache_path(cfg.cache_dir, cfg.z, x_min, y_min).parent}")
-        log_cb(f"Single TIFF tiles: {tile_tif_dir}")
-        progress_cb(total, total, "Kacheln")
-        return
-
-    cfg.output_file.parent.mkdir(parents=True, exist_ok=True)
-    log_cb("Merging started tile-by-tile: only one tile is loaded into RAM at a time...")
-
-    # RAM-schonend: zeilenweise Streifen erzeugen und in eine TIFF-Datei schreiben.
-    # Pillow kann multipage nicht als echtes großes Raster anhängen; daher erstellen wir bei moderaten Größen direkt.
-    # Für extrem große TIFFs wird eine BigTIFF-taugliche Option via tifffile angeboten.
-    if cfg.output_format.upper() == "TIFF":
-        try:
-            import numpy as np
-            import tifffile
-            bigtiff = width * height * 3 > 3_800_000_000
-            mem = tifffile.memmap(str(cfg.output_file), shape=(height, width, 3), dtype="uint8", bigtiff=bigtiff)
-            written = 0
-            for row in range(rows):
+    try:
+        with cf.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for cx0, cy0, cx1, cy1 in iter_chunks(x_min, y_min, x_max, y_max, chunk_size):
                 if stop_event.is_set():
                     break
-                for col in range(cols):
-                    if stop_event.is_set():
+                log_cb(f"Chunk start: x={cx0}..{cx1}, y={cy0}..{cy1}")
+                db_mark_chunk(db, cfg.z, cx0, cy0, cx1, cy1, "running")
+                job_iter = iter_chunk_jobs(cx0, cy0, cx1, cy1, cfg.z, x_min, y_min)
+                pending = set()
+                while not stop_event.is_set():
+                    while len(pending) < max_inflight:
+                        try:
+                            job = next(job_iter)
+                        except StopIteration:
+                            break
+                        if db_tile_done(db, job.z, job.x, job.y):
+                            skipped += 1
+                            done += 1
+                            if done % 100 == 0:
+                                progress_cb(done, total, "Stream")
+                            continue
+                        pending.add(pool.submit(download_one, job, cfg, stop_event))
+                    if not pending:
                         break
-                    x = x_min + col
-                    y = y_min + row
-                    tif_p = safe_tile_tif_path(tile_tif_dir, cfg.z, x, y)
-                    if tif_p.exists():
-                        tile = Image.open(tif_p).convert("RGB").resize((TILE_SIZE, TILE_SIZE))
-                    else:
-                        raw_p = safe_cache_path(cfg.cache_dir, cfg.z, x, y)
-                        data = raw_p.read_bytes() if raw_p.exists() else None
-                        tile = decode_tile(data)
-                        save_tile_as_tif(data, tif_p)
-                    mem[row*TILE_SIZE:(row+1)*TILE_SIZE, col*TILE_SIZE:(col+1)*TILE_SIZE, :] = np.asarray(tile, dtype="uint8")
-                    written += 1
-                    if written % 10 == 0 or written == total:
-                        progress_cb(written, total, "Write")
-            mem.flush()
-            del mem
-        except Exception as exc:
-            log_cb(f"tifffile nicht verfügbar/fehlgeschlagen ({exc}); fallback auf Pillow, nur für kleinere Karten.")
-            if width * height > 250_000_000:
-                raise RuntimeError("Für diese Größe bitte installieren: pip install tifffile numpy")
-            out = Image.new("RGB", (width, height))
-            for row in range(rows):
-                strip = Image.new("RGB", (width, TILE_SIZE))
-                for col in range(cols):
-                    x = x_min + col
-                    y = y_min + row
-                    p = safe_cache_path(cfg.cache_dir, cfg.z, x, y)
-                    data = p.read_bytes() if p.exists() else None
-                    strip.paste(decode_tile(data), (col * TILE_SIZE, 0))
-                out.paste(strip, (0, row * TILE_SIZE))
-                progress_cb(row + 1, rows, "Write")
-            out.save(cfg.output_file, format="TIFF", compression="tiff_deflate")
-    else:
-        if width * height > 250_000_000:
-            raise RuntimeError("PNG/JPEG ist für diese Größe zu groß. Bitte TIFF wählen.")
-        out = Image.new("RGB", (width, height))
-        for row in range(rows):
-            strip = Image.new("RGB", (width, TILE_SIZE))
-            for col in range(cols):
-                x = x_min + col
-                y = y_min + row
-                p = safe_cache_path(cfg.cache_dir, cfg.z, x, y)
-                data = p.read_bytes() if p.exists() else None
-                strip.paste(decode_tile(data), (col * TILE_SIZE, 0))
-            out.paste(strip, (0, row * TILE_SIZE))
-            progress_cb(row + 1, rows, "Write")
-        fmt = cfg.output_format.upper()
-        save_kwargs = {"quality": 92} if fmt == "JPEG" else {}
-        out.save(cfg.output_file, format=fmt, **save_kwargs)
+                    done_set, pending = cf.wait(pending, return_when=cf.FIRST_COMPLETED)
+                    for fut in done_set:
+                        job, data, err = fut.result()
+                        done += 1
+                        if err:
+                            errors += 1
+                            db_mark_tile(db, job.z, job.x, job.y, "error", err)
+                            if errors <= 30:
+                                log_cb(f"Error {job.z}/{job.x}/{job.y}: {err}")
+                        else:
+                            try:
+                                if cfg.save_individual_tifs:
+                                    save_tile_as_tif(data, safe_tile_tif_path(tile_tif_dir, job.z, job.x, job.y))
+                                if direct_mem is not None:
+                                    import numpy as np
+                                    tile = decode_tile(data)
+                                    r0 = job.row * TILE_SIZE
+                                    c0 = job.col * TILE_SIZE
+                                    direct_mem[r0:r0+TILE_SIZE, c0:c0+TILE_SIZE, :] = np.asarray(tile, dtype="uint8")
+                                db_mark_tile(db, job.z, job.x, job.y, "done", None)
+                            except Exception as exc:
+                                errors += 1
+                                db_mark_tile(db, job.z, job.x, job.y, "error", str(exc))
+                                if errors <= 30:
+                                    log_cb(f"Write error {job.z}/{job.x}/{job.y}: {exc}")
+                        if done % 25 == 0 or done == total:
+                            progress_cb(done, total, "Stream")
+                            if db is not None:
+                                db.commit()
+                db_mark_chunk(db, cfg.z, cx0, cy0, cx1, cy1, "done" if not stop_event.is_set() else "stopped")
+                if direct_mem is not None:
+                    try:
+                        direct_mem.flush()
+                    except Exception:
+                        pass
+    finally:
+        if direct_mem is not None:
+            try:
+                direct_mem.flush()
+                del direct_mem
+            except Exception:
+                pass
+        if db is not None:
+            db.commit()
+            db.close()
 
     if stop_event.is_set():
-        log_cb("Cancelled during writing.")
-    else:
-        log_cb(f"Finished: {cfg.output_file}")
+        log_cb("Stopped. Download state is preserved in SQLite and existing tile files will be skipped on resume.")
+        return
+
+    log_cb(f"Finished streaming. Downloaded/processed: {done:,}; skipped from SQLite: {skipped:,}; errors: {errors:,}")
+    if cfg.output_format.upper() == "TIFF":
+        if width * height * 3 <= MAX_DIRECT_TIFF_BYTES:
+            log_cb(f"Finished BigTIFF/direct output: {cfg.output_file}")
+        else:
+            log_cb("Merged TIFF was intentionally not created because the requested raster is too large. Use TILES/SQLite mode or a lower zoom.")
+
+def open_folder_in_file_manager(path: Path) -> None:
+    """Open a folder in the OS file manager. Safe no-op if it cannot be opened."""
+    path = Path(path).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        if os.name == "nt":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            import subprocess
+            subprocess.Popen(["open", str(path)])
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", str(path)])
+    except Exception:
+        pass
 
 
 class App(tk.Tk):
@@ -477,9 +568,18 @@ class App(tk.Tk):
         self.max_lon = tk.StringVar(value="")
         self.workers = tk.IntVar(value=8)
         self.rate = tk.IntVar(value=20)
+        self.chunk_size = tk.IntVar(value=64)
+        self.save_tile_tifs = tk.BooleanVar(value=False)
         self.outfmt = tk.StringVar(value="TIFF")
         self.cache = tk.StringVar(value=str(Path.home() / "py_map_stitcher_cache"))
         self.outfile = tk.StringVar(value=str(Path.home() / "Desktop" / "map_output.tif"))
+        self.raw_tiles_folder = tk.StringVar()
+        self.single_tiff_folder = tk.StringVar()
+
+        self._update_folder_fields()
+        self.cache.trace_add("write", lambda *_: self._update_folder_fields())
+        self.z.trace_add("write", lambda *_: self._update_folder_fields())
+        self.outfile.trace_add("write", lambda *_: self._update_folder_fields())
 
         r = 0
         def row(label, widget):
@@ -502,7 +602,9 @@ class App(tk.Tk):
         row("East / max lon", ttk.Entry(left, textvariable=self.max_lon))
         row("Download Threads", ttk.Spinbox(left, from_=1, to=64, textvariable=self.workers, width=8))
         row("Delay per Request ms", ttk.Spinbox(left, from_=0, to=5000, increment=10, textvariable=self.rate, width=8))
-        row("Output Format", ttk.Combobox(left, textvariable=self.outfmt, values=["TIFF", "KACHELN", "PNG", "JPEG"], state="readonly"))
+        row("Chunk size tiles", ttk.Spinbox(left, from_=8, to=1024, increment=8, textvariable=self.chunk_size, width=8))
+        row("Save single TIFF tiles", ttk.Checkbutton(left, variable=self.save_tile_tifs))
+        row("Output Format", ttk.Combobox(left, textvariable=self.outfmt, values=["TIFF", "TILES"], state="readonly"))
 
         out_frame = ttk.Frame(left)
         ttk.Entry(out_frame, textvariable=self.outfile, width=35).pack(side="left", fill="x", expand=True)
@@ -512,6 +614,16 @@ class App(tk.Tk):
         ttk.Entry(cache_frame, textvariable=self.cache, width=35).pack(side="left", fill="x", expand=True)
         ttk.Button(cache_frame, text="…", command=self.pick_cache).pack(side="right")
         row("Cache", cache_frame)
+
+        raw_tiles_frame = ttk.Frame(left)
+        ttk.Entry(raw_tiles_frame, textvariable=self.raw_tiles_folder, width=35, state="readonly").pack(side="left", fill="x", expand=True)
+        ttk.Button(raw_tiles_frame, text="Open", command=self.open_raw_tiles_folder).pack(side="right")
+        row("Raw Tiles Folder", raw_tiles_frame)
+
+        tiff_tiles_frame = ttk.Frame(left)
+        ttk.Entry(tiff_tiles_frame, textvariable=self.single_tiff_folder, width=35, state="readonly").pack(side="left", fill="x", expand=True)
+        ttk.Button(tiff_tiles_frame, text="Open", command=self.open_single_tiff_folder).pack(side="right")
+        row("Single TIFF Folder", tiff_tiles_frame)
 
         btns = ttk.Frame(left)
         btns.grid(row=r, column=0, columnspan=2, sticky="ew", pady=12)
@@ -739,22 +851,51 @@ class App(tk.Tk):
         self._log("Selection imported from map preview.")
         self.calculate()
 
+
+    def _raw_tiles_dir(self) -> Path:
+        try:
+            return Path(self.cache.get()).expanduser() / str(int(self.z.get()))
+        except Exception:
+            return Path(self.cache.get()).expanduser()
+
+    def _single_tiff_dir(self) -> Path:
+        try:
+            out = Path(self.outfile.get()).expanduser()
+            return out.parent / f"{out.stem or 'map_output'}_single_tiff_tiles_z{int(self.z.get())}"
+        except Exception:
+            return Path(self.outfile.get()).expanduser().parent
+
+    def _update_folder_fields(self):
+        try:
+            self.raw_tiles_folder.set(str(self._raw_tiles_dir()))
+            self.single_tiff_folder.set(str(self._single_tiff_dir()))
+        except Exception:
+            pass
+
+    def open_raw_tiles_folder(self):
+        open_folder_in_file_manager(self._raw_tiles_dir())
+
+    def open_single_tiff_folder(self):
+        open_folder_in_file_manager(self._single_tiff_dir())
+
     def pick_output(self):
-        ext = {"KACHELN": "", "TIFF": ".tif", "PNG": ".png", "JPEG": ".jpg"}.get(self.outfmt.get(), ".tif")
+        ext = {"TILES": "", "TIFF": ".tif"}.get(self.outfmt.get(), ".tif")
         p = filedialog.asksaveasfilename(defaultextension=ext)
         if p:
             self.outfile.set(p)
+            self._update_folder_fields()
 
     def pick_cache(self):
         p = filedialog.askdirectory()
         if p:
             self.cache.set(p)
+            self._update_folder_fields()
 
     def _config(self) -> StitchConfig:
         return StitchConfig(
             url_template=self.url.get().strip(),
             output_file=Path(self.outfile.get()).expanduser(),
-            cache_dir=Path(self.cache.get()).expanduser(),
+            cache_dir=project_tiles_dir(Path(self.outfile.get()).expanduser()),
             z=int(self.z.get()),
             min_lat=float(self.min_lat.get().replace(",", ".")),
             min_lon=float(self.min_lon.get().replace(",", ".")),
@@ -763,7 +904,11 @@ class App(tk.Tk):
             workers=int(self.workers.get()),
             rate_limit_ms=int(self.rate.get()),
             output_format=self.outfmt.get(),
-            tile_tif_dir=Path(self.outfile.get()).expanduser().parent / f"{Path(self.outfile.get()).expanduser().stem or 'map_output'}_einzelkacheln_tif_z{int(self.z.get())}",
+            tile_tif_dir=Path(self.outfile.get()).expanduser().parent / f"{Path(self.outfile.get()).expanduser().stem or 'map_output'}_single_tiff_tiles_z{int(self.z.get())}",
+            chunk_size=int(self.chunk_size.get()),
+            use_sqlite=True,
+            direct_bigtiff=True,
+            save_individual_tifs=bool(self.save_tile_tifs.get()),
         )
 
     def calculate(self):
@@ -774,10 +919,14 @@ class App(tk.Tk):
             rows = y_max - y_min + 1
             self._log(f"Calculation: x={x_min}..{x_max}, y={y_min}..{y_max}")
             self._log(f"Tiles: {cols} x {rows} = {cols*rows:,}; Pixel: {cols*TILE_SIZE:,} x {rows*TILE_SIZE:,}")
-            if self.outfmt.get().upper() == "KACHELN":
-                self._log("Ausgabe: nur Roh-Kacheln + Single TIFF tiles, keine Gesamtdatei.")
+            self._log(f"Raw tile folder: {self._raw_tiles_dir()}")
+            self._log(f"SQLite resume database: {sqlite_path_for(cfg)}")
+            if self.save_tile_tifs.get():
+                self._log(f"Single TIFF folder: {self._single_tiff_dir()}")
+            if self.outfmt.get().upper() == "TILES":
+                self._log("Output: raw tiles + SQLite resume database, no merged file.")
             elif self.outfmt.get().upper() == "TIFF":
-                self._log("Ausgabe: Single TIFF tiles + finale TIFF-Datei, kachelweise mit maximal einer Kachel im RAM.")
+                self._log("Output: direct BigTIFF streaming where possible; if too large, it continues as tile/cache mode.")
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
 
@@ -790,6 +939,11 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Error", str(exc))
             return
+        self._update_folder_fields()
+        self._log(f"Raw tile folder: {self._raw_tiles_dir()}")
+        self._log(f"SQLite resume database: {sqlite_path_for(cfg)}")
+        if self.save_tile_tifs.get():
+            self._log(f"Single TIFF folder: {self._single_tiff_dir()}")
         self.stop_event.clear()
         self.progress["value"] = 0
         self.worker_thread = threading.Thread(target=self._run_job, args=(cfg,), daemon=True)
