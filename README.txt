@@ -1,4 +1,4 @@
-Simply dowload the .exe here:
+Simply download the .exe here:
 
 
 .exe setup:
