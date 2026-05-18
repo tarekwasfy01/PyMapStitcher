@@ -1,3 +1,10 @@
+Simply dowload the .exe here:
+
+
+.exe setup:
+https://tarekwasfy01.itch.io/pymapstitcher-planetary-version
+
+
 Py Map Stitcher - NoniMapView Style
 
 Windows start:
