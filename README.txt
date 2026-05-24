@@ -1,6 +1,6 @@
 Simply download the .exe of Version 2 here:
 
-
+https://github.com/tarekwasfy01/PyMapStitcher/releases/download/MapStitcher/PyMapStitcher_2.exe
 
 
 
