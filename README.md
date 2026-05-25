@@ -21,7 +21,7 @@ Installation for Python 3.8 / Anaconda:
    python -m pip install requests pillow numpy==1.22.4 tifffile==2023.7.10
 
 New in this version:
-- Every successfully downloaded/generated tile is immediately saved as an individual TIFF file.
+- Every successfully downloaded/generated tile is immediately saved as an individual TIFF file and georeferenced.
 - The folder is created next to the output file, e.g. map_output_single_tiff_tiles_z18.
 - The final TIFF file is written tile-by-tile: only one 256x256 tile is loaded at a time.
 - Existing raw tiles and TIFF tiles are skipped automatically.
