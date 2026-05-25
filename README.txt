@@ -1,15 +1,12 @@
+# Py Map Stitcher - NoniMapView Style
+
 Simply download the .exe of Version 2 here:
 
-https://github.com/tarekwasfy01/PyMapStitcher/releases/download/MapStitcher/PyMapStitcher_2.exe
+### https://github.com/tarekwasfy01/PyMapStitcher/releases/download/MapStitcher/PyMapStitcher_2.exe
 
 
 
 Py Map Stitcher - NoniMapView Style
-
-Windows start:
-1. Run START_WINDOWS.bat
-or:
-   python py_map_stitcher.py
 
 Installation for Python 3.8 / Anaconda:
    python -m pip install requests pillow numpy==1.22.4 tifffile==2023.7.10
