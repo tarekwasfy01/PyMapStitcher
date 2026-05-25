@@ -1,4 +1,0 @@
-requests
-pillow
-numpy==1.22.4
-tifffile==2023.7.10
