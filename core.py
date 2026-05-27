@@ -245,8 +245,8 @@ def mosaic_webmercator_bounds(x_min: int, y_min: int, x_max: int, y_max: int, z:
 
 
 def write_worldfile_and_prj(tif_path: Path, width: int, height: int, bounds_3857: Tuple[float, float, float, float]) -> None:
-    # Minimal-invasive Georeferenzierung: Der ursprüngliche TIFF/BigTIFF-Schreibweg bleibt unverändert.
-    # QGIS/GIS liest die Georeferenz über .tfw + .prj neben der TIFF-Datei.
+    # Georeferenzierung exakt wie im alten funktionierenden Standalone-Skript:
+    # BigTIFF/TIFF bleibt unverändert, QGIS liest die Position über .tfw + .prj.
     west, south, east, north = bounds_3857
     px_w = (east - west) / float(width)
     px_h = (south - north) / float(height)
