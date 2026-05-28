@@ -1,31 +1,45 @@
-# Py Map Stitcher - NoniMapView Style
+# -*- coding: utf-8 -*-
+from pathlib import Path
 
-Simply download the .exe of Version 2 here:
+from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QAction
 
-
-
-
-https://github.com/tarekwasfy01/PyMapStitcher/releases/download/MapStitcher/PyMapStitcher_2.exe
-
-
-
-![Overviev of PyMapStiticher2](https://github.com/tarekwasfy01/PyMapStitcher/blob/main/Screenshot%202026-05-25%20235310.png?raw=true)
+from .dialog import PyMapStitcherDialog
 
 
+class PyMapStitcherPlugin:
+    def __init__(self, iface):
+        self.iface = iface
+        self.plugin_dir = Path(__file__).resolve().parent
+        self.action = None
+        self.dialog = None
 
+    def tr(self, message):
+        return QCoreApplication.translate("PyMapStitcher", message)
 
+    def initGui(self):
+        icon = QIcon(str(self.plugin_dir / "icon.png"))
+        self.action = QAction(icon, self.tr("Py Map Stitcher"), self.iface.mainWindow())
+        self.action.setObjectName("PyMapStitcherAction")
+        self.action.setWhatsThis(self.tr("Open Py Map Stitcher"))
+        self.action.setStatusTip(self.tr("Download and stitch map tiles without GDAL"))
+        self.action.triggered.connect(self.run)
+        self.iface.addToolBarIcon(self.action)
+        self.iface.addPluginToMenu(self.tr("Py Map Stitcher"), self.action)
 
-Py Map Stitcher - NoniMapView Style
+    def unload(self):
+        if self.action is not None:
+            self.iface.removePluginMenu(self.tr("Py Map Stitcher"), self.action)
+            self.iface.removeToolBarIcon(self.action)
+            self.action = None
+        if self.dialog is not None:
+            self.dialog.close()
+            self.dialog = None
 
-Installation for Python 3.8 / Anaconda:
-   python -m pip install requests pillow numpy==1.22.4 tifffile==2023.7.10
-
-New in this version:
-- Every successfully downloaded/generated tile is immediately saved as an individual TIFF file and georeferenced.
-- The folder is created next to the output file, e.g. map_output_single_tiff_tiles_z18.
-- The final TIFF file is written tile-by-tile: only one 256x256 tile is loaded at a time.
-- Existing raw tiles and TIFF tiles are skipped automatically.
-- Selection is limited to the currently visible map area.
-- File names contain z/x/y, e.g. z18_x123_y456.tif.
-
-Note: Only use tile servers where downloading/stitching is allowed.
+    def run(self):
+        if self.dialog is None:
+            self.dialog = PyMapStitcherDialog(self.iface)
+        self.dialog.show()
+        self.dialog.raise_()
+        self.dialog.activateWindow()
