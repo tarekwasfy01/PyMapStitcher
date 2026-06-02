@@ -1,0 +1,21 @@
+[general]
+name=Py Map Stitcher
+qgisMinimumVersion=3.22
+qgisMaximumVersion=3.99
+description=Tile downloader and map stitcher with Google Hybrid preview and TIFF export.
+version=1.0.0
+author=Tarek Wasfy
+email=tarekwasfy01@gmail.com
+
+about=Download and stitch XYZ map tiles into georeferenced TIFF mosaics. Includes Google Hybrid preview and QGIS map extent selection.
+
+tracker=https://github.com/tarekwasfy01/PyMapStitcher/issues
+repository=https://github.com/tarekwasfy01/PyMapStitcher
+homepage=https://github.com/tarekwasfy01/PyMapStitcher
+
+icon=icon.png
+experimental=False
+deprecated=False
+
+tags=tiles,xyz,tiff,stitcher,satellite,google,imagery,map
+category=Web

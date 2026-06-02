@@ -1,0 +1,10 @@
+QGIS Plugin Upload Checklist
+
+- metadata.txt included
+- __init__.py included
+- No __pycache__
+- No .pyc files
+- Public repository links valid
+- Plugin tested in QGIS 3.x
+- ZIP contains one plugin folder only
+- Icon included
