@@ -10,6 +10,17 @@ PyMapStitcher 3 is a desktop application for downloading, stitching, and exporti
 
 <a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe</a>
 
+# Download from PyPI:
+
+py -m pip install pymapstitcher
+
+pymapstitcher
+
+py -m pymapstitcher
+
+## For CUDA 12.x, install:
+
+py -m pip install "pymapstitcher[cuda]"
 
 # Download the complete real exe offline installer here:
 
