@@ -5,16 +5,18 @@ PyMapStitcher 3 is a desktop application for downloading, stitching, and exporti
 
 # Download complete Python inclusive Setup-EXE:
 
-https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe
 
-https://github.com/tarekwasfy01/PyMapStitcher/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe
+<a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe</a>
+
+<a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe</a>
+
 
 # Download the complete real exe offline installer here:
-https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe
 
-https://drive.google.com/file/d/1nj_I-FyyIF5o_mpjskkSrCtyjZnRnmvC/view?usp=sharing
+<a href="https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe">https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe</a>
+<a href="https://gitlab.com/TWasfy/pymapstitcher-3/-/raw/main/PyMapStitcher3_OnedirEXE_Offline_Setup.exe?ref_type=heads">https://gitlab.com/TWasfy/pymapstitcher-3/-/raw/main/PyMapStitcher3_OnedirEXE_Offline_Setup.exe?ref_type=heads</a>
+<a href="https://drive.google.com/file/d/1nj_I-FyyIF5o_mpjskkSrCtyjZnRnmvC/view?usp=sharing">https://drive.google.com/file/d/1nj_I-FyyIF5o_mpjskkSrCtyjZnRnmvC/view?usp=sharing</a>
 
-https://gitlab.com/TWasfy/pymapstitcher-3/-/raw/main/PyMapStitcher3_OnedirEXE_Offline_Setup.exe?ref_type=heads
 
 # Overview:
 
@@ -22,8 +24,7 @@ https://gitlab.com/TWasfy/pymapstitcher-3/-/raw/main/PyMapStitcher3_OnedirEXE_Of
 
 # Download complete Python inclusive Setup-EXE:
 
-https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe
-
-https://github.com/tarekwasfy01/PyMapStitcher/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe
-
+<a href="https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe">https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe</a>
+<a href="https://gitlab.com/TWasfy/pymapstitcher-3/-/raw/main/PyMapStitcher3_OnedirEXE_Offline_Setup.exe?ref_type=heads">https://gitlab.com/TWasfy/pymapstitcher-3/-/raw/main/PyMapStitcher3_OnedirEXE_Offline_Setup.exe?ref_type=heads</a>
+<a href="https://drive.google.com/file/d/1nj_I-FyyIF5o_mpjskkSrCtyjZnRnmvC/view?usp=sharing">https://drive.google.com/file/d/1nj_I-FyyIF5o_mpjskkSrCtyjZnRnmvC/view?usp=sharing</a>
 
