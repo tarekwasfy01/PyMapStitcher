@@ -22,6 +22,9 @@ py -m pymapstitcher
 
 py -m pip install "pymapstitcher[cuda]"
 
+# Conda
+$ conda install mustatil::pymapstitcher
+
 # Download the complete real exe offline installer here:
 
 <a href="https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe">https://archive.org/download/py-map-stitcher-3/PyMapStitcher3_OnedirEXE_Offline_Setup.exe</a>
