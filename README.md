@@ -12,7 +12,7 @@ PyMapStitcher 3 is a desktop application for downloading, stitching, and exporti
 
 
 # Download Linux .deb installer:
-<a href=""https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/pymapstitcher_3.0.0_amd64.deb>https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/pymapstitcher_3.0.0_amd64.deb</a>
+<a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/pymapstitcher_3.0.0_amd64.deb">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/pymapstitcher_3.0.0_amd64.deb</a>
 
 # Download Mac OS .pkg installer:
 
