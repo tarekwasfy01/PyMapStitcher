@@ -17,7 +17,7 @@ PyMapStitcher 3 is a desktop application for downloading, stitching, and exporti
     <img alt="Get it from the Snap Store" src=https://snapcraft.io/en/dark/install.svg />
   </a>
 # Download Mac OS .pkg installer:
-
+<a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher-3.0.0-macOS.pkg">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher-3.0.0-macOS.pkg</a>
 
 
 # Download from PyPI:
