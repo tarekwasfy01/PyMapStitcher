@@ -9,7 +9,9 @@ PyMapStitcher 3 is a desktop application for downloading, stitching, and exporti
 <a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe</a>
 
 <a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/PyMapStitcher3_Offline_Setup.exe</a>
+# Download from the Microsoft Store:
 
+<a href="https://get.microsoft.com/installer/download/9PDS632RMS2S?referrer=appbadge" target="_self" > <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/> </a>
 
 # Download Linux .deb installer:
 <a href="https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/pymapstitcher_3.0.0_amd64.deb">https://github.com/tarekwasfy01/PyMapStitcher-3---Cuda-Maps-Downloader/releases/download/PyMapStitcher3/pymapstitcher_3.0.0_amd64.deb</a>
